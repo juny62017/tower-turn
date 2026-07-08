@@ -1,6 +1,7 @@
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const scoreEl = document.getElementById('score');
+const turnBtn = document.getElementById('turn-btn');
 
 let width, height;
 let blocks = [];
@@ -9,12 +10,16 @@ let fallingBlocks = [];
 let activeBlock = null;
 
 let score = 0;
-let state = 'playing'; // 'playing' | 'gameover'
+let state = 'playing';
 let lastTime = performance.now();
 
 const SCALE = 40;
 const BLOCK_HEIGHT = 1;
 const MOVE_SPEED = 0.008;
+
+let turns = 0;
+let cameraAngle = 0;
+let cameraY = 0;
 
 function resize() {
     width = window.innerWidth;
@@ -25,11 +30,19 @@ function resize() {
 
 function init() {
     window.addEventListener('resize', resize);
-    window.addEventListener('mousedown', drop);
-    window.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        drop();
-    }, { passive: false });
+    
+    const triggerDrop = (e) => {
+        if (e.target !== turnBtn && !turnBtn.contains(e.target)) {
+            e.preventDefault();
+            drop();
+        }
+    };
+
+    window.addEventListener('mousedown', triggerDrop);
+    window.addEventListener('touchstart', triggerDrop, { passive: false });
+    
+    turnBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); turn(); });
+    turnBtn.addEventListener('touchstart', (e) => { e.stopPropagation(); e.preventDefault(); turn(); }, { passive: false });
     
     for (let i = 0; i < 75; i++) {
         particles.push({
@@ -40,7 +53,6 @@ function init() {
         });
     }
 
-    // Base stack
     for (let i = 0; i < 5; i++) {
         blocks.push({
             x: 0,
@@ -57,30 +69,56 @@ function init() {
     requestAnimationFrame(tick);
 }
 
+function turn() {
+    turns++;
+    if (activeBlock) {
+        const top = blocks[blocks.length - 1];
+        const dx = activeBlock.x - top.x;
+        const dz = activeBlock.z - top.z;
+        
+        activeBlock.x = top.x + dz;
+        activeBlock.z = top.z - dx;
+        
+        if (turns % 2 === 1) {
+            activeBlock.dir = -activeBlock.dir;
+        }
+    }
+}
+
 function spawnActiveBlock() {
-    const topBlock = blocks[blocks.length - 1];
-    const direction = (blocks.length % 2 === 0) ? 1 : -1;
+    const top = blocks[blocks.length - 1];
+    const visualStart = ((blocks.length + turns) % 2 === 0) ? 6 : -6;
     
     activeBlock = {
-        x: direction * 6,
-        y: topBlock.y + BLOCK_HEIGHT,
-        z: topBlock.z,
-        w: topBlock.w,
-        d: topBlock.d,
-        h: topBlock.h,
-        dir: -direction
+        x: top.x,
+        y: top.y + BLOCK_HEIGHT,
+        z: top.z,
+        w: top.w,
+        d: top.d,
+        h: top.h
     };
+    
+    if (turns % 4 === 0) activeBlock.x += visualStart;
+    if (turns % 4 === 1) activeBlock.z -= visualStart;
+    if (turns % 4 === 2) activeBlock.x -= visualStart;
+    if (turns % 4 === 3) activeBlock.z += visualStart;
+    
+    const axis = (turns % 2 === 0) ? 'x' : 'z';
+    const currentOffset = activeBlock[axis] - top[axis];
+    activeBlock.dir = currentOffset > 0 ? -1 : 1;
 }
 
 function drop() {
     if (state !== 'playing' || !activeBlock) return;
 
-    const topBlock = blocks[blocks.length - 1];
-    const delta = activeBlock.x - topBlock.x;
-    const overlap = topBlock.w - Math.abs(delta);
+    const top = blocks[blocks.length - 1];
+    const axis = (turns % 2 === 0) ? 'x' : 'z';
+    const dim = (axis === 'x') ? 'w' : 'd';
+    
+    const delta = activeBlock[axis] - top[axis];
+    const overlap = activeBlock[dim] - Math.abs(delta);
 
     if (overlap <= 0) {
-        // Total miss
         state = 'gameover';
         console.log('Game Over - Total Miss');
         activeBlock.vy = 0;
@@ -90,34 +128,25 @@ function drop() {
         return;
     }
 
-    if (overlap > topBlock.w - 0.15) {
-        // Perfect placement
-        activeBlock.x = topBlock.x;
-        activeBlock.w = topBlock.w;
+    if (overlap > activeBlock[dim] - 0.15) {
+        activeBlock[axis] = top[axis];
         blocks.push(activeBlock);
     } else {
-        // Sliced placement
-        const newW = overlap;
-        const newX = topBlock.x + (delta / 2);
+        const newDim = overlap;
+        const newPos = top[axis] + (delta / 2);
         
-        const fallingW = topBlock.w - overlap;
-        const fallingX = delta > 0 
-            ? newX + (newW / 2) + (fallingW / 2)
-            : newX - (newW / 2) - (fallingW / 2);
+        const fallingDim = activeBlock[dim] - overlap;
+        const fallingPos = delta > 0 
+            ? newPos + (newDim / 2) + (fallingDim / 2)
+            : newPos - (newDim / 2) - (fallingDim / 2);
 
-        fallingBlocks.push({
-            x: fallingX,
-            y: activeBlock.y,
-            z: activeBlock.z,
-            w: fallingW,
-            d: activeBlock.d,
-            h: activeBlock.h,
-            vy: 0,
-            alpha: 1
-        });
+        const fallingBlock = { ...activeBlock, vy: 0, alpha: 1 };
+        fallingBlock[dim] = fallingDim;
+        fallingBlock[axis] = fallingPos;
+        fallingBlocks.push(fallingBlock);
 
-        activeBlock.w = newW;
-        activeBlock.x = newX;
+        activeBlock[dim] = newDim;
+        activeBlock[axis] = newPos;
         blocks.push(activeBlock);
     }
 
@@ -138,8 +167,11 @@ function tick(time) {
 
 function update(dt) {
     if (state === 'playing' && activeBlock) {
-        activeBlock.x += activeBlock.dir * MOVE_SPEED * dt;
-        if (Math.abs(activeBlock.x) > 6) {
+        const axis = (turns % 2 === 0) ? 'x' : 'z';
+        activeBlock[axis] += activeBlock.dir * MOVE_SPEED * dt;
+        
+        const top = blocks[blocks.length - 1];
+        if (Math.abs(activeBlock[axis] - top[axis]) > 6) {
             activeBlock.dir *= -1;
         }
     }
@@ -150,72 +182,87 @@ function update(dt) {
         fb.alpha -= 0.001 * dt;
     });
     fallingBlocks = fallingBlocks.filter(fb => fb.alpha > 0);
+
+    const targetAngle = turns * (Math.PI / 2);
+    cameraAngle += (targetAngle - cameraAngle) * 0.01 * dt;
+
+    const targetCameraY = Math.max(0, (blocks.length - 5) * BLOCK_HEIGHT);
+    cameraY += (targetCameraY - cameraY) * 0.005 * dt;
 }
 
 function project(x, y, z) {
     const cos30 = 0.866;
     const sin30 = 0.5;
-    
     const originX = width / 2;
-    const originY = height * 0.8;
+    const originY = height * 0.7;
     
     const sx = originX + (x - z) * cos30 * SCALE;
-    const sy = originY + (x + z) * sin30 * SCALE - y * SCALE;
-    
+    const sy = originY + (x + z) * sin30 * SCALE - (y - cameraY) * SCALE;
     return { x: sx, y: sy };
 }
 
-function drawPolygon(points, color) {
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    
-    const start = project(points[0].x, points[0].y, points[0].z);
-    ctx.moveTo(start.x, start.y);
-    
-    for (let i = 1; i < points.length; i++) {
-        const p = project(points[i].x, points[i].y, points[i].z);
-        ctx.lineTo(p.x, p.y);
-    }
-    
-    ctx.closePath();
-    ctx.fill();
-    
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 0.5;
-    ctx.stroke();
-}
-
-function drawBlock(block) {
+function drawCube(block) {
     ctx.globalAlpha = block.alpha !== undefined ? Math.max(0, block.alpha) : 1;
 
     const { x, y, z, w, d, h } = block;
-    const hw = w / 2;
-    const hd = d / 2;
+    const hw = w / 2, hd = d / 2;
     
-    const topFace = [
-        {x: x - hw, y: y + h, z: z - hd},
-        {x: x + hw, y: y + h, z: z - hd},
-        {x: x + hw, y: y + h, z: z + hd},
-        {x: x - hw, y: y + h, z: z + hd}
-    ];
-    
-    const rightFace = [
-        {x: x + hw, y: y + h, z: z + hd},
-        {x: x + hw, y: y + h, z: z - hd},
-        {x: x + hw, y: y, z: z - hd},
-        {x: x + hw, y: y, z: z + hd}
-    ];
-    
-    const leftFace = [
-        {x: x - hw, y: y + h, z: z + hd},
-        {x: x + hw, y: y + h, z: z + hd},
-        {x: x + hw, y: y, z: z + hd},
-        {x: x - hw, y: y, z: z + hd}
+    const corners = [
+        { cx: x - hw, cy: y + h, cz: z - hd },
+        { cx: x + hw, cy: y + h, cz: z - hd },
+        { cx: x + hw, cy: y + h, cz: z + hd },
+        { cx: x - hw, cy: y + h, cz: z + hd },
+        { cx: x - hw, cy: y, cz: z - hd },
+        { cx: x + hw, cy: y, cz: z - hd },
+        { cx: x + hw, cy: y, cz: z + hd },
+        { cx: x - hw, cy: y, cz: z + hd }
     ];
 
-    drawPolygon(leftFace, '#59526b');
-    drawPolygon(rightFace, '#746c8a');
-    drawPolygon(topFace, '#938bac');
+    const pts = corners.map(c => {
+        const rx = c.cx * Math.cos(cameraAngle) - c.cz * Math.sin(cameraAngle);
+        const rz = c.cx * Math.sin(cameraAngle) + c.cz * Math.cos(cameraAngle);
+        return project(rx, c.cy, rz);
+    });
+
+    const blockCx = pts.reduce((sum, p) => sum + p.x, 0) / 8;
+
+    const faces = [
+        { indices: [0, 1, 2, 3], type: 'top' },
+        { indices: [4, 5, 6, 7], type: 'bottom' },
+        { indices: [3, 2, 6, 7], type: 'side' },
+        { indices: [5, 4, 0, 1], type: 'side' },
+        { indices: [2, 1, 5, 6], type: 'side' },
+        { indices: [4, 7, 3, 0], type: 'side' }
+    ];
+
+    faces.forEach(face => {
+        const p0 = pts[face.indices[0]];
+        const p1 = pts[face.indices[1]];
+        const p2 = pts[face.indices[2]];
+        const p3 = pts[face.indices[3]];
+
+        const cp = (p1.x - p0.x) * (p2.y - p1.y) - (p1.y - p0.y) * (p2.x - p1.x);
+        
+        if (cp > 0) {
+            let color = '#938bac';
+            if (face.type === 'bottom') color = '#2a2536';
+            if (face.type === 'side') {
+                const faceCx = (p0.x + p1.x + p2.x + p3.x) / 4;
+                color = faceCx < blockCx - 0.1 ? '#59526b' : '#746c8a';
+            }
+
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(p0.x, p0.y);
+            for (let i = 1; i < 4; i++) ctx.lineTo(pts[face.indices[i]].x, pts[face.indices[i]].y);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 0.5;
+            ctx.stroke();
+        }
+    });
 
     ctx.globalAlpha = 1;
 }
@@ -231,9 +278,17 @@ function draw() {
     ctx.clearRect(0, 0, width, height);
     drawParticles();
     
-    blocks.forEach(drawBlock);
-    fallingBlocks.forEach(drawBlock);
-    if (activeBlock) drawBlock(activeBlock);
+    let allBlocks = [...blocks, ...fallingBlocks];
+    if (activeBlock) allBlocks.push(activeBlock);
+    
+    allBlocks.forEach(b => {
+        const rx = b.x * Math.cos(cameraAngle) - b.z * Math.sin(cameraAngle);
+        const rz = b.x * Math.sin(cameraAngle) + b.z * Math.cos(cameraAngle);
+        b.depth = b.y * 100 + (rx + rz); 
+    });
+    
+    allBlocks.sort((a, b) => a.depth - b.depth);
+    allBlocks.forEach(drawCube);
 }
 
 init();

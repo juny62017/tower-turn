@@ -35,3 +35,25 @@ canvas {
 #score {
     font-size: 32px;
 }
+
+#turn-btn {
+    position: absolute;
+    bottom: 30px;
+    left: 30px;
+    width: 60px;
+    height: 60px;
+    background-color: #59526b;
+    color: #f0f0f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+#turn-btn svg {
+    width: 28px;
+    height: 28px;
+    margin-right: 2px;
+}
