@@ -1,23 +1,35 @@
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
 
 let width, height;
-const blocks = [];
-const particles = [];
+let blocks = [];
+let particles = [];
+let fallingBlocks = [];
+let activeBlock = null;
+
+let score = 0;
+let state = 'playing'; // 'playing' | 'gameover'
+let lastTime = performance.now();
 
 const SCALE = 40;
 const BLOCK_HEIGHT = 1;
+const MOVE_SPEED = 0.008;
 
 function resize() {
     width = window.innerWidth;
     height = window.innerHeight;
     canvas.width = width;
     canvas.height = height;
-    draw();
 }
 
 function init() {
     window.addEventListener('resize', resize);
+    window.addEventListener('mousedown', drop);
+    window.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        drop();
+    }, { passive: false });
     
     for (let i = 0; i < 75; i++) {
         particles.push({
@@ -28,6 +40,7 @@ function init() {
         });
     }
 
+    // Base stack
     for (let i = 0; i < 5; i++) {
         blocks.push({
             x: 0,
@@ -40,6 +53,103 @@ function init() {
     }
 
     resize();
+    spawnActiveBlock();
+    requestAnimationFrame(tick);
+}
+
+function spawnActiveBlock() {
+    const topBlock = blocks[blocks.length - 1];
+    const direction = (blocks.length % 2 === 0) ? 1 : -1;
+    
+    activeBlock = {
+        x: direction * 6,
+        y: topBlock.y + BLOCK_HEIGHT,
+        z: topBlock.z,
+        w: topBlock.w,
+        d: topBlock.d,
+        h: topBlock.h,
+        dir: -direction
+    };
+}
+
+function drop() {
+    if (state !== 'playing' || !activeBlock) return;
+
+    const topBlock = blocks[blocks.length - 1];
+    const delta = activeBlock.x - topBlock.x;
+    const overlap = topBlock.w - Math.abs(delta);
+
+    if (overlap <= 0) {
+        // Total miss
+        state = 'gameover';
+        console.log('Game Over - Total Miss');
+        activeBlock.vy = 0;
+        activeBlock.alpha = 1;
+        fallingBlocks.push(activeBlock);
+        activeBlock = null;
+        return;
+    }
+
+    if (overlap > topBlock.w - 0.15) {
+        // Perfect placement
+        activeBlock.x = topBlock.x;
+        activeBlock.w = topBlock.w;
+        blocks.push(activeBlock);
+    } else {
+        // Sliced placement
+        const newW = overlap;
+        const newX = topBlock.x + (delta / 2);
+        
+        const fallingW = topBlock.w - overlap;
+        const fallingX = delta > 0 
+            ? newX + (newW / 2) + (fallingW / 2)
+            : newX - (newW / 2) - (fallingW / 2);
+
+        fallingBlocks.push({
+            x: fallingX,
+            y: activeBlock.y,
+            z: activeBlock.z,
+            w: fallingW,
+            d: activeBlock.d,
+            h: activeBlock.h,
+            vy: 0,
+            alpha: 1
+        });
+
+        activeBlock.w = newW;
+        activeBlock.x = newX;
+        blocks.push(activeBlock);
+    }
+
+    score++;
+    scoreEl.innerText = score;
+    spawnActiveBlock();
+}
+
+function tick(time) {
+    const dt = time - lastTime;
+    lastTime = time;
+
+    update(dt);
+    draw();
+
+    requestAnimationFrame(tick);
+}
+
+function update(dt) {
+    if (state === 'playing' && activeBlock) {
+        activeBlock.x += activeBlock.dir * MOVE_SPEED * dt;
+        if (Math.abs(activeBlock.x) > 6) {
+            activeBlock.dir *= -1;
+        }
+    }
+
+    fallingBlocks.forEach(fb => {
+        fb.vy -= 0.0005 * dt;
+        fb.y += fb.vy * dt;
+        fb.alpha -= 0.001 * dt;
+    });
+    fallingBlocks = fallingBlocks.filter(fb => fb.alpha > 0);
 }
 
 function project(x, y, z) {
@@ -76,6 +186,8 @@ function drawPolygon(points, color) {
 }
 
 function drawBlock(block) {
+    ctx.globalAlpha = block.alpha !== undefined ? Math.max(0, block.alpha) : 1;
+
     const { x, y, z, w, d, h } = block;
     const hw = w / 2;
     const hd = d / 2;
@@ -104,6 +216,8 @@ function drawBlock(block) {
     drawPolygon(leftFace, '#59526b');
     drawPolygon(rightFace, '#746c8a');
     drawPolygon(topFace, '#938bac');
+
+    ctx.globalAlpha = 1;
 }
 
 function drawParticles() {
@@ -116,7 +230,10 @@ function drawParticles() {
 function draw() {
     ctx.clearRect(0, 0, width, height);
     drawParticles();
+    
     blocks.forEach(drawBlock);
+    fallingBlocks.forEach(drawBlock);
+    if (activeBlock) drawBlock(activeBlock);
 }
 
 init();
