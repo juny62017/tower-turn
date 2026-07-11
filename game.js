@@ -1,7 +1,11 @@
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const scoreEl = document.getElementById('score');
+const runStarsEl = document.getElementById('run-stars-val');
+const totalStarsEl = document.getElementById('total-stars-val');
 const turnBtn = document.getElementById('turn-btn');
+const pauseBtn = document.getElementById('pause-btn');
+const pauseOverlay = document.getElementById('pause-overlay');
 
 let width, height;
 let blocks = [];
@@ -10,7 +14,9 @@ let fallingBlocks = [];
 let activeBlock = null;
 
 let score = 0;
-let state = 'playing';
+let runStars = 0;
+let totalStars = parseInt(localStorage.getItem('towerTurnTotalStars')) || 0;
+let state = 'playing'; // 'playing', 'paused', 'gameover'
 let lastTime = performance.now();
 
 const SCALE = 40;
@@ -31,8 +37,11 @@ function resize() {
 function init() {
     window.addEventListener('resize', resize);
     
+    totalStarsEl.innerText = totalStars;
+    
     const triggerDrop = (e) => {
-        if (e.target !== turnBtn && !turnBtn.contains(e.target)) {
+        if (e.target !== turnBtn && !turnBtn.contains(e.target) && 
+            e.target !== pauseBtn && !pauseBtn.contains(e.target)) {
             e.preventDefault();
             drop();
         }
@@ -44,6 +53,12 @@ function init() {
     turnBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); turn(); });
     turnBtn.addEventListener('touchstart', (e) => { e.stopPropagation(); e.preventDefault(); turn(); }, { passive: false });
     
+    pauseBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); togglePause(); });
+    pauseBtn.addEventListener('touchstart', (e) => { e.stopPropagation(); e.preventDefault(); togglePause(); }, { passive: false });
+    
+    pauseOverlay.addEventListener('mousedown', (e) => { e.stopPropagation(); togglePause(); });
+    pauseOverlay.addEventListener('touchstart', (e) => { e.stopPropagation(); e.preventDefault(); togglePause(); }, { passive: false });
+
     for (let i = 0; i < 75; i++) {
         particles.push({
             x: Math.random(),
@@ -69,7 +84,19 @@ function init() {
     requestAnimationFrame(tick);
 }
 
+function togglePause() {
+    if (state === 'playing') {
+        state = 'paused';
+        pauseOverlay.style.display = 'flex';
+    } else if (state === 'paused') {
+        state = 'playing';
+        pauseOverlay.style.display = 'none';
+        lastTime = performance.now();
+    }
+}
+
 function turn() {
+    if (state !== 'playing') return;
     turns++;
     if (activeBlock) {
         const top = blocks[blocks.length - 1];
@@ -131,6 +158,12 @@ function drop() {
     if (overlap > activeBlock[dim] - 0.15) {
         activeBlock[axis] = top[axis];
         blocks.push(activeBlock);
+        
+        runStars++;
+        totalStars++;
+        runStarsEl.innerText = runStars;
+        totalStarsEl.innerText = totalStars;
+        localStorage.setItem('towerTurnTotalStars', totalStars);
     } else {
         const newDim = overlap;
         const newPos = top[axis] + (delta / 2);
@@ -159,7 +192,9 @@ function tick(time) {
     const dt = time - lastTime;
     lastTime = time;
 
-    update(dt);
+    if (state !== 'paused') {
+        update(dt);
+    }
     draw();
 
     requestAnimationFrame(tick);
