@@ -14,7 +14,7 @@ Features
 How To Use
 
 * Wait for the block to slide over the tower
-* Click anywhere to drop it
+* Click anywhere to drop it ( USE MOUSE CLICK )
 * and lets goooo
 
 
@@ -25,3 +25,5 @@ Tech Stack
 * JavaScript
 
 SOMETIMES GAME MAY GLITCH, JUST DO A SWEET REFRESH 
+## SCREENSHOT
+<img width="953" height="420" alt="Screenshot 2026-07-13 002118" src="https://github.com/user-attachments/assets/4bee8bad-0d3e-4962-bc2e-da33c25452c8" />
