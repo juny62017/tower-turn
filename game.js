@@ -1,11 +1,22 @@
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+
+const hudEl = document.getElementById('hud');
+const turnBtn = document.getElementById('turn-btn');
+const totalStarsHud = document.getElementById('total-stars');
 const scoreEl = document.getElementById('score');
 const runStarsEl = document.getElementById('run-stars-val');
 const totalStarsEl = document.getElementById('total-stars-val');
-const turnBtn = document.getElementById('turn-btn');
 const pauseBtn = document.getElementById('pause-btn');
 const pauseOverlay = document.getElementById('pause-overlay');
+
+const menuEl = document.getElementById('menu');
+const recordEl = document.getElementById('record');
+const menuStarsEl = document.getElementById('menu-stars-val');
+const playBtn = document.getElementById('play-btn');
+const perkDouble = document.getElementById('perk-double');
+const perkHeadstart = document.getElementById('perk-headstart');
+const soundBtn = document.getElementById('sound-btn');
 
 let width, height;
 let blocks = [];
@@ -13,12 +24,15 @@ let particles = [];
 let fallingBlocks = [];
 let activeBlock = null;
 
+
+let record = parseInt(localStorage.getItem('towerTurnRecord')) || 0;
+let totalStars = parseInt(localStorage.getItem('towerTurnTotalStars')) || 0;
 let score = 0;
 let runStars = 0;
-let totalStars = parseInt(localStorage.getItem('towerTurnTotalStars')) || 0;
-let state = 'playing'; // 'playing', 'paused', 'gameover'
-let lastTime = performance.now();
+let state = 'menu'; 
+let soundEnabled = true;
 
+let lastTime = performance.now();
 const SCALE = 40;
 const BLOCK_HEIGHT = 1;
 const MOVE_SPEED = 0.008;
@@ -37,16 +51,14 @@ function resize() {
 function init() {
     window.addEventListener('resize', resize);
     
-    totalStarsEl.innerText = totalStars;
-    
     const triggerDrop = (e) => {
+        if (state !== 'playing') return;
         if (e.target !== turnBtn && !turnBtn.contains(e.target) && 
             e.target !== pauseBtn && !pauseBtn.contains(e.target)) {
             e.preventDefault();
             drop();
         }
     };
-
     window.addEventListener('mousedown', triggerDrop);
     window.addEventListener('touchstart', triggerDrop, { passive: false });
     
@@ -59,6 +71,23 @@ function init() {
     pauseOverlay.addEventListener('mousedown', (e) => { e.stopPropagation(); togglePause(); });
     pauseOverlay.addEventListener('touchstart', (e) => { e.stopPropagation(); e.preventDefault(); togglePause(); }, { passive: false });
 
+    
+    playBtn.addEventListener('mousedown', (e) => { 
+        e.stopPropagation(); 
+        startGame(); 
+    });
+    playBtn.addEventListener('touchstart', (e) => { 
+        e.stopPropagation(); 
+        e.preventDefault(); 
+        startGame(); 
+    }, { passive: false });
+    
+    soundBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        soundEnabled = !soundEnabled;
+        soundBtn.classList.toggle('sound-muted', !soundEnabled);
+    });
+
     for (let i = 0; i < 75; i++) {
         particles.push({
             x: Math.random(),
@@ -68,20 +97,71 @@ function init() {
         });
     }
 
-    for (let i = 0; i < 5; i++) {
-        blocks.push({
-            x: 0,
-            y: i * BLOCK_HEIGHT,
-            z: 0,
-            w: 4,
-            d: 4,
-            h: BLOCK_HEIGHT
-        });
-    }
-
     resize();
-    spawnActiveBlock();
+    showMenu();
     requestAnimationFrame(tick);
+}
+
+function setupBaseTower() {
+    blocks = [];
+    fallingBlocks = [];
+    activeBlock = null;
+    turns = 0;
+    cameraAngle = 0;
+    cameraY = 0;
+
+    for (let i = 0; i < 5; i++) {
+        blocks.push({ x: 0, y: i * BLOCK_HEIGHT, z: 0, w: 4, d: 4, h: BLOCK_HEIGHT });
+    }
+}
+
+function showMenu() {
+    state = 'menu';
+    setupBaseTower();
+    
+    recordEl.innerText = `RECORD: ${record}`;
+    menuStarsEl.innerText = totalStars;
+    
+    const updatePerk = (el, threshold) => {
+        const statusEl = el.querySelector('.perk-status');
+        if (record >= threshold) {
+            statusEl.innerHTML = '<span class="perk-text">Ready</span>';
+        } else {
+            statusEl.innerHTML = `
+                <svg class="icon-lock" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+                <span class="perk-text">Locked! (RECORD - ${threshold})</span>
+            `;
+        }
+    };
+
+    updatePerk(perkDouble, 20);
+    updatePerk(perkHeadstart, 50);
+
+    menuEl.style.display = 'flex';
+    hudEl.style.display = 'none';
+    turnBtn.style.display = 'none';
+    totalStarsHud.style.display = 'none';
+}
+
+function startGame() {
+    setupBaseTower();
+    score = 0;
+    runStars = 0;
+    scoreEl.innerText = score;
+    runStarsEl.innerText = runStars;
+    totalStarsEl.innerText = totalStars;
+    
+    menuEl.style.display = 'none';
+    hudEl.style.display = 'flex';
+    turnBtn.style.display = 'flex';
+    totalStarsHud.style.display = 'flex';
+    
+    state = 'playing';
+    lastTime = performance.now();
+    spawnActiveBlock();
 }
 
 function togglePause() {
@@ -106,9 +186,7 @@ function turn() {
         activeBlock.x = top.x + dz;
         activeBlock.z = top.z - dx;
         
-        if (turns % 2 === 1) {
-            activeBlock.dir = -activeBlock.dir;
-        }
+        if (turns % 2 === 1) activeBlock.dir = -activeBlock.dir;
     }
 }
 
@@ -117,12 +195,8 @@ function spawnActiveBlock() {
     const visualStart = ((blocks.length + turns) % 2 === 0) ? 6 : -6;
     
     activeBlock = {
-        x: top.x,
-        y: top.y + BLOCK_HEIGHT,
-        z: top.z,
-        w: top.w,
-        d: top.d,
-        h: top.h
+        x: top.x, y: top.y + BLOCK_HEIGHT, z: top.z,
+        w: top.w, d: top.d, h: top.h
     };
     
     if (turns % 4 === 0) activeBlock.x += visualStart;
@@ -146,16 +220,24 @@ function drop() {
     const overlap = activeBlock[dim] - Math.abs(delta);
 
     if (overlap <= 0) {
+
         state = 'gameover';
-        console.log('Game Over - Total Miss');
         activeBlock.vy = 0;
         activeBlock.alpha = 1;
         fallingBlocks.push(activeBlock);
         activeBlock = null;
+
+        if (score > record) {
+            record = score;
+            localStorage.setItem('towerTurnRecord', record);
+        }
+        
+        setTimeout(showMenu, 1500);
         return;
     }
 
     if (overlap > activeBlock[dim] - 0.15) {
+
         activeBlock[axis] = top[axis];
         blocks.push(activeBlock);
         
@@ -165,6 +247,7 @@ function drop() {
         totalStarsEl.innerText = totalStars;
         localStorage.setItem('towerTurnTotalStars', totalStars);
     } else {
+
         const newDim = overlap;
         const newPos = top[axis] + (delta / 2);
         
@@ -196,7 +279,6 @@ function tick(time) {
         update(dt);
     }
     draw();
-
     requestAnimationFrame(tick);
 }
 
