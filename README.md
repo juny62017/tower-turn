@@ -11,6 +11,15 @@ Features
 * Turn button and Unlockable perks
 * Simple and clean
 
+
+## THEME 
+Theme: Endless Game
+WAHY -  My project totally fits the Endless Game theme because there are absolutely zero levels, 
+no finish line, and no final boss.
+The game loop literally runs forever. The 3D camera just keeps scrolling up and up infinitely as long as you keep landing blocks on the tower. 
+The game only stops when you eventually mess up and drop a block completely into the void
+
+
 How To Use
 
 * Wait for the block to slide over the tower
